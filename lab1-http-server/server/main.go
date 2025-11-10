@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-const NumClients = 10 //at most 10 according to exercise
+const numClients = 10 //at most 10 according to exercise
 
 func main() {
 	if len(os.Args) < 2 { //slice of strings
@@ -28,7 +28,7 @@ func main() {
 	defer ln.Close() //close listener properly when program exits
 	fmt.Printf("server listening on port %s\n", port)
 
-	slots := make(chan struct{}, NumClients) //limiting channel to at most 10 connections
+	slots := make(chan struct{}, numClients) //limiting channel to at most 10 connections
 
 	for {
 		//accpet incoming connection
