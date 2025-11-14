@@ -77,9 +77,9 @@ func handleConnection(conn net.Conn) {
 }
 
 func getRequests(conn net.Conn, request *http.Request) { //* means pointer which we use to avoid copying the whole struct
-	extractedPath := request.URL.Path
+	extractedPath := request.URL.Path //"/fileName.html"
 
-	baseDir := "../uploads" //serve files from uploads directory
+	baseDir := "uploads" //serve files from uploads directory
 	safePath := filepath.Join(baseDir, filepath.Clean(extractedPath))
 
 	if !strings.HasPrefix(safePath, baseDir) {
@@ -120,8 +120,8 @@ func getRequests(conn net.Conn, request *http.Request) { //* means pointer which
 func postRequests(conn net.Conn, request *http.Request) {
 	extractedPath := request.URL.Path
 
-	baseDir := "../uploads"
-	safePath := filepath.Join(baseDir, filepath.Base(extractedPath))
+	baseDir := "uploads"
+	safePath := filepath.Join(baseDir, filepath.Clean(extractedPath))
 
 	if !strings.HasPrefix(safePath, baseDir) {
 		sendResponse(conn, 400, "Bad Request", "text/plain", []byte("invalid path"))

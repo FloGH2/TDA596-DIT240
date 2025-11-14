@@ -72,7 +72,7 @@ func handleProxyConnection(conn net.Conn) {
 		return
 	}
 
-	serverAddress := request.URL.Host //localhost:xxxx..
+	serverAddress := request.URL.Host //host:port
 	if !strings.Contains(serverAddress, ":") {
 		serverAddress += ":80"
 	}
