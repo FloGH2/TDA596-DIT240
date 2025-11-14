@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -21,27 +22,28 @@ func main() {
 
 	var port string = os.Args[1]
 
-	ln, err := net.Listen("tcp", ":"+port)
+	//server setup
+	ln, err := net.Listen("tcp", ":"+port) //listen to tcp connectionis accordint to exercise
 	if err != nil {
 		log.Fatalln(err)
 	}
-	defer ln.Close() //close listener properly when program exits
+	defer ln.Close() //close listener properly at the end of main function
 	fmt.Printf("server listening on port %s\n", port)
 
 	slots := make(chan struct{}, numClients) //limiting channel to at most 10 connections
 
 	for {
-		//accpet incoming connection
+		//infinite loop waiting to accpet incoming connections
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Println(err)
 			continue
 		}
 
-		slots <- struct{}{} //write in channel (blocks if 10 clients are active)
+		slots <- struct{}{} //writes in channel (blocks if 10 clients are active)
 		//handle connection
 		go func(c net.Conn) { //create goroutine for each new client request
-			defer func() {
+			defer func() { //anonymous function to close connection and release slot when done
 				c.Close()
 				<-slots //reads from channel and releases slot (no overwhelming)
 			}()
@@ -53,13 +55,13 @@ func main() {
 func handleConnection(conn net.Conn) {
 	reader := bufio.NewReader(conn) //buffer that reads data from client, offers better read operations than just conn.Reader
 
-	request, err := http.ReadRequest(reader) //parses bytes from reader and converts it to structured object
+	request, err := http.ReadRequest(reader) //parses bytes from reader and converts it to structured object, request is a pointer to http.Request struct
 	if err != nil {
 		sendResponse(conn, 400, "Bad Request", "text/plain", []byte("Bad Request"))
 		return
 	}
 
-	defer request.Body.Close()
+	defer request.Body.Close() //body is a stream that needs to be closed after reading
 
 	fmt.Printf("Request: %s %s from %s\n", request.Method, request.URL.Path, conn.RemoteAddr())
 
@@ -68,14 +70,23 @@ func handleConnection(conn net.Conn) {
 		getRequests(conn, request)
 	case "POST":
 		postRequests(conn, request)
-	default:
-		sendResponse(conn, 501, "Not Implemented", "text/plain", []byte("Not Implemented"))
+	default: //not supported methods return 501
+		sendResponse(conn, 501, "Not Implemented", "text/plain", []byte("501 Not Implemented"))
 	}
 
 }
 
-func getRequests(conn net.Conn, request *http.Request) { //* -> pointer so no copy which makes it faster
+func getRequests(conn net.Conn, request *http.Request) { //* means pointer which we use to avoid copying the whole struct
 	extractedPath := request.URL.Path
+
+	baseDir := "../uploads" //serve files from uploads directory
+	safePath := filepath.Join(baseDir, filepath.Clean(extractedPath))
+
+	if !strings.HasPrefix(safePath, baseDir) {
+		sendResponse(conn, 400, "Bad Request", "text/plain", []byte("invalid path"))
+		return
+	}
+
 	var contentType string
 	if strings.HasSuffix(extractedPath, ".html") {
 		contentType = "text/html"
@@ -94,23 +105,44 @@ func getRequests(conn net.Conn, request *http.Request) { //* -> pointer so no co
 		return
 	}
 
-	data, err := os.ReadFile("." + extractedPath)
+	data, err := os.ReadFile(safePath)
 	if err != nil {
-		sendResponse(conn, 404, "Not Found", "text/plain", []byte("404 Not Found")) //file does not exist
+		if os.IsNotExist(err) {
+			sendResponse(conn, 404, "Not Found", "text/plain", []byte("404 Not Found"))
+		} else {
+			sendResponse(conn, 500, "Internal Server Error", "text/plain", []byte("500 Internal Server Error"))
+		}
 		return
 	}
 	sendResponse(conn, 200, "OK", contentType, data)
 }
 
 func postRequests(conn net.Conn, request *http.Request) {
-	body, err := io.ReadAll(request.Body)
-	if err != nil {
-		sendResponse(conn, 404, "Not Found", "text/plain", []byte("404 Not Found"))
+	extractedPath := request.URL.Path
+
+	baseDir := "../uploads"
+	safePath := filepath.Join(baseDir, filepath.Base(extractedPath))
+
+	if !strings.HasPrefix(safePath, baseDir) {
+		sendResponse(conn, 400, "Bad Request", "text/plain", []byte("invalid path"))
 		return
 	}
-	err = os.WriteFile("uploads"+request.URL.Path, body, 0664)
+
+	err := os.MkdirAll(baseDir, 0755)
 	if err != nil {
-		sendResponse(conn, 500, "Internal Server Error", "text/plain", []byte("500 Internal Server Error"))
+		sendResponse(conn, 500, "Internal Server Error", "text/plain", []byte("Error creating upload directory"))
+		return
+	}
+
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		sendResponse(conn, 400, "Bad Request", "text/plain", []byte("Error reading request body"))
+		return
+	}
+
+	err = os.WriteFile(safePath, body, 0664)
+	if err != nil {
+		sendResponse(conn, 500, "Internal Server Error", "text/plain", []byte("Error saving file"))
 		return
 	}
 	sendResponse(conn, 200, "OK", "text/plain", []byte("File uploaded successfully"))
@@ -122,6 +154,15 @@ func sendResponse(conn net.Conn, code int, status string, contentType string, bo
 	response += fmt.Sprintf("Content-Length: %d\r\n", len(body))
 	response += "\r\n"
 
-	conn.Write([]byte(response))
-	conn.Write(body)
+	if _, err := conn.Write([]byte(response)); err != nil {
+		log.Printf("Failed to send response header: %v", err)
+		return
+	}
+
+	if len(body) > 0 {
+		if _, err := conn.Write(body); err != nil {
+			log.Printf("Failed to send response body: %v", err)
+			return
+		}
+	}
 }
