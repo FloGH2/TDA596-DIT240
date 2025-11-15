@@ -1,0 +1,20 @@
+services:
+  httpserver:
+    build: .
+    command: ["./http_server", "8080"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./uploads:/app/uploads
+    working_dir: /app
+    restart: unless-stopped
+
+  webproxy:
+    build: .
+    command: ["./proxy", "9090"]
+    ports:
+      - "9090:9090"
+    working_dir: /app
+    depends_on:
+      - httpserver
+    restart: unless-stopped

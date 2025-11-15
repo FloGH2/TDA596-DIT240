@@ -79,33 +79,22 @@ func handleConnection(conn net.Conn) {
 func getRequests(conn net.Conn, request *http.Request) { //* means pointer which we use to avoid copying the whole struct
 	extractedPath := request.URL.Path //"/fileName.html"
 
+	if !isValidFileExtension(extractedPath) {
+		sendResponse(conn, 400, "Bad Request", "text/plain", []byte("400 Bad Request: Invalid file extension"))
+		return
+	}
+
 	baseDir := "uploads" //serve files from uploads directory
 	safePath := filepath.Join(baseDir, filepath.Clean(extractedPath))
 
-	if !strings.HasPrefix(safePath, baseDir) {
+	if !strings.HasPrefix(safePath, baseDir) { //prevents directory traversal attacks
 		sendResponse(conn, 400, "Bad Request", "text/plain", []byte("invalid path"))
 		return
 	}
 
-	var contentType string
-	if strings.HasSuffix(extractedPath, ".html") {
-		contentType = "text/html"
-	} else if strings.HasSuffix(extractedPath, ".txt") {
-		contentType = "text/plain"
-	} else if strings.HasSuffix(extractedPath, ".gif") {
-		contentType = "image/gif"
-	} else if strings.HasSuffix(extractedPath, ".jpeg") {
-		contentType = "image/jpeg"
-	} else if strings.HasSuffix(extractedPath, ".jpg") {
-		contentType = "image/jpeg"
-	} else if strings.HasSuffix(extractedPath, ".css") {
-		contentType = "text/css"
-	} else {
-		sendResponse(conn, 400, "Bad Request", "text/plain", []byte("400 Bad Request"))
-		return
-	}
+	contentType := getContentType(extractedPath) //content type based on file extension
 
-	data, err := os.ReadFile(safePath)
+	data, err := os.ReadFile(safePath) //read file content
 	if err != nil {
 		if os.IsNotExist(err) {
 			sendResponse(conn, 404, "Not Found", "text/plain", []byte("404 Not Found"))
@@ -119,6 +108,11 @@ func getRequests(conn net.Conn, request *http.Request) { //* means pointer which
 
 func postRequests(conn net.Conn, request *http.Request) {
 	extractedPath := request.URL.Path
+
+	if !isValidFileExtension(extractedPath) {
+		sendResponse(conn, 400, "Bad Request", "text/plain", []byte("400 Bad Request: Invalid file extension"))
+		return
+	}
 
 	baseDir := "uploads"
 	safePath := filepath.Join(baseDir, filepath.Clean(extractedPath))
@@ -146,6 +140,33 @@ func postRequests(conn net.Conn, request *http.Request) {
 		return
 	}
 	sendResponse(conn, 200, "OK", "text/plain", []byte("File uploaded successfully"))
+}
+
+// helper function to get content type based on file extension
+func getContentType(path string) string {
+	if strings.HasSuffix(path, ".html") {
+		return "text/html"
+	} else if strings.HasSuffix(path, ".txt") {
+		return "text/plain"
+	} else if strings.HasSuffix(path, ".gif") {
+		return "image/gif"
+	} else if strings.HasSuffix(path, ".jpeg") || strings.HasSuffix(path, ".jpg") {
+		return "image/jpeg"
+	} else if strings.HasSuffix(path, ".css") {
+		return "text/css"
+	}
+	return "text/plain" //fallback according to exercise
+}
+
+// helper function to validate file extensions
+func isValidFileExtension(path string) bool {
+	validExtensions := []string{".html", ".txt", ".gif", ".jpeg", ".jpg", ".css"}
+	for _, ext := range validExtensions {
+		if strings.HasSuffix(path, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 func sendResponse(conn net.Conn, code int, status string, contentType string, body []byte) {
